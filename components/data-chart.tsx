@@ -587,7 +587,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
   return (
     <Card>
       <CardHeader className="pb-4">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 flex-col">
           <div className="flex-1 space-y-3 min-w-0">
             {/* Title and estimate badge */}
             <div className="flex items-center gap-3 flex-wrap">
