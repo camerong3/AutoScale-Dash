@@ -587,117 +587,127 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
   return (
     <Card>
       <CardHeader className="pb-4">
-        <div className="flex items-start justify-between gap-4 flex-col">
-          {/* Title and estimate badge */}
-          <div className="w-full space-y-3 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <CardTitle className="font-sans text-lg font-semibold tracking-tight">{title}</CardTitle>
-              {estimatedWeightKg != null && estimatedWeightLbs != null && (
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 border border-emerald-200">
-                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    <span className="text-sm font-semibold text-emerald-700">{estimatedWeightKg.toFixed(1)} kg</span>
-                    <span className="text-xs text-emerald-600">({estimatedWeightLbs.toFixed(1)} lbs)</span>
-                  </div>
-                  {estimatedModeCount > 1 && (
-                    <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
-                      {estimatedModeCount}× mode
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Stats grid */}
-            {stats && (
-              <div className="flex items-center gap-3 text-sm flex-nowrap overflow-x-auto">
-                <div className="flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="text-muted-foreground">Points:</span>
-                  <span className="font-medium">{stats.points.toLocaleString()}</span>
-                </div>
-                <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="text-muted-foreground">Min:</span>
-                  <span className="font-medium">{stats.min} kg</span>
-                </div>
-                <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="text-muted-foreground">Max:</span>
-                  <span className="font-medium">{stats.max} kg</span>
-                </div>
-                <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-1.5 whitespace-nowrap">
-                  <span className="text-muted-foreground">Avg:</span>
-                  <span className="font-medium">{stats.avg} kg</span>
-                </div>
-              </div>
-            )}
-
-            {/* Date */}
-            <div className="flex items-center gap-2">
-              {timeOfDay === "Morning" ? (
-                <svg
-                  className="h-3.5 w-3.5 text-amber-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <circle cx="12" cy="12" r="4" fill="currentColor" />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41"
-                  />
-                </svg>
-              ) : (
-                <svg className="h-3.5 w-3.5 text-indigo-400" fill="currentColor" viewBox="0 0 24 24" stroke="none">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-              )}
-              <span className="text-xs text-muted-foreground">{timeOfDay}</span>
-            </div>
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopyData}
-              className="bg-transparent whitespace-nowrap"
-              disabled={!rows || rows.length === 0}
-            >
-              {copied ? (
-                <>
-                  <svg className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <svg className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                    />
-                  </svg>
-                  Copy JSON
-                </>
-              )}
-            </Button>
-            {zoomDomain && (
+        <div className="space-y-4">
+          {/* Title and action buttons row */}
+          <div className="flex items-start justify-between gap-4">
+            <CardTitle className="font-sans text-lg font-semibold tracking-tight">{title}</CardTitle>
+            <div className="flex items-center gap-2 shrink-0">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleResetZoom}
+                onClick={handleCopyData}
                 className="bg-transparent whitespace-nowrap"
+                disabled={!rows || rows.length === 0}
               >
-                Reset Zoom
+                {copied ? (
+                  <>
+                    <svg
+                      className="h-4 w-4 mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <svg
+                      className="h-4 w-4 mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      />
+                    </svg>
+                    Copy JSON
+                  </>
+                )}
               </Button>
+              {zoomDomain && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetZoom}
+                  className="bg-transparent whitespace-nowrap"
+                >
+                  Reset Zoom
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Estimated weight badge */}
+          {estimatedWeightKg != null && estimatedWeightLbs != null && (
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 border border-emerald-200">
+                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <span className="text-sm font-semibold text-emerald-700">{estimatedWeightKg.toFixed(1)} kg</span>
+                <span className="text-xs text-emerald-600">({estimatedWeightLbs.toFixed(1)} lbs)</span>
+              </div>
+              {estimatedModeCount > 1 && (
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                  {estimatedModeCount}× mode
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Stats grid */}
+          {stats && (
+            <div className="flex items-center gap-3 text-sm flex-nowrap overflow-x-auto">
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-muted-foreground">Points:</span>
+                <span className="font-medium">{stats.points.toLocaleString()}</span>
+              </div>
+              <div className="h-4 w-px bg-border" />
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-muted-foreground">Min:</span>
+                <span className="font-medium">{stats.min} kg</span>
+              </div>
+              <div className="h-4 w-px bg-border" />
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-muted-foreground">Max:</span>
+                <span className="font-medium">{stats.max} kg</span>
+              </div>
+              <div className="h-4 w-px bg-border" />
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-muted-foreground">Avg:</span>
+                <span className="font-medium">{stats.avg} kg</span>
+              </div>
+            </div>
+          )}
+
+          {/* Date and time of day */}
+          <div className="flex items-center gap-2">
+            {timeOfDay === "Morning" ? (
+              <svg
+                className="h-3.5 w-3.5 text-amber-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <circle cx="12" cy="12" r="4" fill="currentColor" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41"
+                />
+              </svg>
+            ) : (
+              <svg className="h-3.5 w-3.5 text-indigo-400" fill="currentColor" viewBox="0 0 24 24" stroke="none">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
             )}
+            <span className="text-xs text-muted-foreground">{timeOfDay}</span>
           </div>
         </div>
       </CardHeader>
