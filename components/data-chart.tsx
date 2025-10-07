@@ -14,15 +14,11 @@ import {
   Tooltip,
   Bar,
   BarChart,
-  ReferenceLine,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer } from "@/components/ui/chart"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@supabase/supabase-js"
-import { useNotes } from "@/lib/use-notes"
-import { NotesDialog } from "@/components/notes-dialog"
-import { StickyNote } from "lucide-react"
 
 type DataPoint = {
   t: number
@@ -45,10 +41,9 @@ type DataChartProps = {
   data?: DataPoint[]
   createdAt?: string
   fetchOptions?: SupabaseFetchOptions
-  eventId?: string
 }
 
-export function DataChart({ title, data, createdAt, fetchOptions, eventId }: DataChartProps) {
+export function DataChart({ title, data, createdAt, fetchOptions }: DataChartProps) {
   const [rows, setRows] = useState<DataPoint[]>(data ?? [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -75,11 +70,6 @@ export function DataChart({ title, data, createdAt, fetchOptions, eventId }: Dat
   const modeCache = useRef<Map<number, { left: number; right: number; modeKg: number | null; count: number }>>(
     new Map(),
   )
-
-  const chartEventId = eventId ?? title
-  const { notes, addNote, updateNote, deleteNote } = useNotes(chartEventId)
-  const [notesDialogOpen, setNotesDialogOpen] = useState(false)
-  const [selectedNoteTimeRange, setSelectedNoteTimeRange] = useState<{ start: number; end: number } | null>(null)
 
   useEffect(() => {
     modeCache.current.clear()
@@ -478,17 +468,6 @@ export function DataChart({ title, data, createdAt, fetchOptions, eventId }: Dat
     setHoverT(null)
   }
 
-  const handleAddNoteForSelection = () => {
-    if (refAreaLeft !== "" && refAreaRight !== "" && refAreaLeft !== refAreaRight) {
-      const left = Math.min(Number(refAreaLeft), Number(refAreaRight))
-      const right = Math.max(Number(refAreaLeft), Number(refAreaRight))
-      setSelectedNoteTimeRange({ start: left, end: right })
-    } else {
-      setSelectedNoteTimeRange(null)
-    }
-    setNotesDialogOpen(true)
-  }
-
   const handleResetZoom = () => {
     console.log("[v0] Reset zoom - rows.length:", rows.length)
     console.log("[v0] Setting brush to 0 -", rows.length - 1)
@@ -667,18 +646,6 @@ export function DataChart({ title, data, createdAt, fetchOptions, eventId }: Dat
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSelectedNoteTimeRange(null)
-                  setNotesDialogOpen(true)
-                }}
-                className="bg-transparent whitespace-nowrap"
-              >
-                <StickyNote className="h-4 w-4 mr-1.5" />
-                Notes {notes.length > 0 && `(${notes.length})`}
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -875,30 +842,6 @@ export function DataChart({ title, data, createdAt, fetchOptions, eventId }: Dat
                       fillOpacity={0.08}
                     />
                   )}
-                  {notes.map((note) => {
-                    if (note.timeRange) {
-                      return (
-                        <ReferenceArea
-                          key={note.id}
-                          x1={note.timeRange.start}
-                          x2={note.timeRange.end}
-                          strokeOpacity={0}
-                          fill="#f59e0b"
-                          fillOpacity={0.1}
-                        />
-                      )
-                    } else {
-                      return (
-                        <ReferenceLine
-                          key={note.id}
-                          x={note.timestamp}
-                          stroke="#f59e0b"
-                          strokeWidth={2}
-                          strokeDasharray="3 3"
-                        />
-                      )
-                    }
-                  })}
                 </LineChart>
               </ResponsiveContainer>
               <div className="mt-1 text-center">
@@ -969,17 +912,6 @@ export function DataChart({ title, data, createdAt, fetchOptions, eventId }: Dat
           </div>
         )}
       </CardContent>
-
-      <NotesDialog
-        open={notesDialogOpen}
-        onOpenChange={setNotesDialogOpen}
-        notes={notes}
-        onAddNote={addNote}
-        onUpdateNote={updateNote}
-        onDeleteNote={deleteNote}
-        selectedTimeRange={selectedNoteTimeRange}
-        currentTimestamp={hoverT ?? undefined}
-      />
     </Card>
   )
 }

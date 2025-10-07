@@ -147,7 +147,6 @@ export function DashboardClient() {
             {graphs.map((graph) => (
               <DataChart
                 key={graph.id}
-                eventId={graph.id}
                 title={new Date(graph.started_at).toLocaleString()}
                 data={graph.samples}
                 createdAt={graph.started_at}
