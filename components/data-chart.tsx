@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import {
   Line,
-  LineChart,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -14,6 +13,7 @@ import {
   Tooltip,
   Bar,
   BarChart,
+  ComposedChart,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer } from "@/components/ui/chart"
@@ -284,6 +284,10 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     for (let i = 0; i < matches.length; i += step) sampled.push(matches[i])
     return sampled
   }, [rows, zoomDomain, estimatedWeightKg])
+
+  const modePointsSet = useMemo(() => {
+    return new Set(estimatePoints.map((p) => p.t))
+  }, [estimatePoints])
 
   const estimatedWeightLbs = useMemo(() => {
     if (estimatedWeightKg == null) return null
@@ -614,6 +618,25 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     return histogramArray
   }, [visibleRows])
 
+  const CustomDot = useCallback(
+    (props: any) => {
+      const { cx, cy, payload } = props
+      const isMode = modePointsSet.has(payload.t)
+
+      if (isMode) {
+        return (
+          <g>
+            <circle cx={cx} cy={cy} r={4} fill="#10b981" fillOpacity={0.6} />
+            <circle cx={cx} cy={cy} r={2} fill="#10b981" />
+          </g>
+        )
+      }
+
+      return <circle cx={cx} cy={cy} r={4} fill="transparent" stroke="transparent" />
+    },
+    [modePointsSet],
+  )
+
   return (
     <Card>
       <CardHeader className="pb-4">
@@ -759,7 +782,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
               className="h-[360px] w-full"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart
+                <ComposedChart
                   data={rows}
                   margin={{ top: 5, right: 10, left: 20, bottom: 5 }}
                   onMouseDown={handleMouseDown}
@@ -809,10 +832,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
                     dataKey="kg"
                     stroke="#3b82f6"
                     strokeWidth={2}
-                    dot={(props: any) => {
-                      const { cx, cy } = props
-                      return <circle cx={cx} cy={cy} r={4} stroke="transparent" fill="transparent" />
-                    }}
+                    dot={<CustomDot />}
                     activeDot={{ r: 6, stroke: "#3b82f6", fill: "#3b82f6" }}
                     isAnimationActive={false}
                   />
@@ -842,7 +862,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
                       fillOpacity={0.08}
                     />
                   )}
-                </LineChart>
+                </ComposedChart>
               </ResponsiveContainer>
               <div className="mt-1 text-center">
                 <span className="text-xs text-muted-foreground">Time (t)</span>
