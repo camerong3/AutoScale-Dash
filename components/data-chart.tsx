@@ -588,8 +588,8 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     <Card>
       <CardHeader className="pb-4">
         <div className="flex items-start justify-between gap-4 flex-col">
-          <div className="flex-1 space-y-3 min-w-0">
-            {/* Title and estimate badge */}
+          {/* Title and estimate badge */}
+          <div className="w-full space-y-3 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <CardTitle className="font-sans text-lg font-semibold tracking-tight">{title}</CardTitle>
               {estimatedWeightKg != null && estimatedWeightLbs != null && (
