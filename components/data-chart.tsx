@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import {
   Line,
   LineChart,
@@ -57,7 +57,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
   const [brushEndIndex, setBrushEndIndex] = useState<number>(0)
   const [copied, setCopied] = useState(false)
 
-  const WINDOW_HALF = 5000
+  const WINDOW_HALF = 2500
   const [hoverWindow, setHoverWindow] = useState<{
     left: number
     right: number
@@ -66,6 +66,14 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
   } | null>(null)
   const GROUP_COUNT = 10
   const [hoverT, setHoverT] = useState<number | null>(null)
+
+  const modeCache = useRef<Map<number, { left: number; right: number; modeKg: number | null; count: number }>>(
+    new Map(),
+  )
+
+  useEffect(() => {
+    modeCache.current.clear()
+  }, [rows])
 
   useEffect(() => {
     if (data && data.length > 0) {
@@ -282,7 +290,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     return estimatedWeightKg * 2.20462262185
   }, [estimatedWeightKg])
 
-  function groupForT(t: number) {
+  const groupForT = (t: number) => {
     if (!groupedRanges || groupedRanges.length === 0) return null
     for (const g of groupedRanges) {
       if (t >= g.startT && t <= g.endT) return g
@@ -337,44 +345,63 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     return hour < 15 ? "Morning" : "Night"
   }, [createdAt])
 
-  function computeModeKgInWindow(centerT: number): {
-    left: number
-    right: number
-    modeKg: number | null
-    count: number
-  } {
-    const left = centerT - WINDOW_HALF
-    const right = centerT + WINDOW_HALF
-    if (!rows || rows.length === 0) return { left, right, modeKg: null, count: 0 }
-    const inRange = rows.filter((r) => r.t >= left && r.t <= right)
+  const computeModeKgInWindow = useCallback(
+    (
+      centerT: number,
+    ): {
+      left: number
+      right: number
+      modeKg: number | null
+      count: number
+    } => {
+      const roundedT = Math.round(centerT)
 
-    console.log("[v0] computeModeKgInWindow - centerT:", centerT)
-    console.log("[v0] Window range:", left, "to", right)
-    console.log("[v0] Points in range:", inRange.length)
-
-    if (inRange.length === 0) return { left, right, modeKg: null, count: 0 }
-    const bins = new Map<number, number>() // key: kg rounded to 0.1
-    for (const r of inRange) {
-      const key = Math.round((r.kg ?? 0) * 10) / 10
-      bins.set(key, (bins.get(key) ?? 0) + 1)
-    }
-    let best: number | null = null
-    let bestCount = 0
-    for (const [k, c] of bins.entries()) {
-      if (c > bestCount) {
-        bestCount = c
-        best = k
-      } else if (c === bestCount && best !== null && k > best) {
-        // tie-breaker: choose the higher weight
-        best = k
+      const cached = modeCache.current.get(roundedT)
+      if (cached) {
+        return cached
       }
-    }
 
-    console.log("[v0] Mode weight found:", best, "kg with count:", bestCount)
-    console.log("[v0] Total unique bins:", bins.size)
+      const left = roundedT - WINDOW_HALF
+      const right = roundedT + WINDOW_HALF
+      if (!rows || rows.length === 0) {
+        const result = { left, right, modeKg: null, count: 0 }
+        modeCache.current.set(roundedT, result)
+        return result
+      }
+      const inRange = rows.filter((r) => r.t >= left && r.t <= right)
+      if (inRange.length === 0) {
+        const result = { left, right, modeKg: null, count: 0 }
+        modeCache.current.set(roundedT, result)
+        return result
+      }
+      const bins = new Map<number, number>() // key: kg rounded to 0.1
+      for (const r of inRange) {
+        const key = Math.round((r.kg ?? 0) * 10) / 10
+        bins.set(key, (bins.get(key) ?? 0) + 1)
+      }
+      let best: number | null = null
+      let bestCount = 0
+      for (const [k, c] of bins.entries()) {
+        if (c > bestCount) {
+          bestCount = c
+          best = k
+        } else if (c === bestCount && best !== null && k > best) {
+          best = k
+        }
+      }
 
-    return { left, right, modeKg: best, count: inRange.length }
-  }
+      const result = { left, right, modeKg: best, count: inRange.length }
+      modeCache.current.set(roundedT, result)
+
+      if (modeCache.current.size > 1000) {
+        const firstKey = modeCache.current.keys().next().value
+        modeCache.current.delete(firstKey)
+      }
+
+      return result
+    },
+    [rows, WINDOW_HALF],
+  )
 
   function indexForT(target: number): number {
     if (!rows || rows.length === 0) return 0
@@ -387,7 +414,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
       if (tm < target) lo = mid + 1
       else hi = mid - 1
     }
-    // lo is the first index greater than target; choose the closer of lo and lo-1
     const cand = Math.max(0, Math.min(rows.length - 1, lo))
     if (cand > 0) {
       const a = rows[cand - 1]
@@ -431,7 +457,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
       const left = Math.min(Number(refAreaLeft), Number(refAreaRight))
       const right = Math.max(Number(refAreaLeft), Number(refAreaRight))
       setZoomDomain({ left, right })
-      // Sync the Brush slider range to the new zoom window
       const startIdx = indexForT(left)
       const endIdx = indexForT(right)
       setBrushStartIndex(Math.min(startIdx, endIdx))
@@ -452,7 +477,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     setRefAreaRight("")
     setYAuto(true)
 
-    // Reset brush indices
     const newEndIndex = rows.length - 1
     setBrushStartIndex(0)
     setBrushEndIndex(newEndIndex)
@@ -491,7 +515,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
       const left = rows[Math.min(clampedStart, clampedEnd)].t
       const right = rows[Math.max(clampedStart, clampedEnd)].t
       setZoomDomain({ left, right })
-      // Update hover window around the new center of the selection for immediate feedback
       const center = (left + right) / 2
       setHoverWindow(computeModeKgInWindow(center))
     }
@@ -518,15 +541,12 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     }
   }
 
-  const CustomTooltip = ({ active, label, payload }: any) => {
+  const CustomTooltip = useCallback(({ active, label, payload }: any) => {
     if (!active || !payload || payload.length === 0) return null
     const tNum = Number(label)
     const g = Number.isFinite(tNum) ? groupForT(tNum) : null
     const modeText = g && g.modeKg !== null ? `${g.modeKg.toFixed(1)} kg` : "—"
     const groupText = g ? `[${g.startT} → ${g.endT}] (N=${g.count})` : "—"
-
-    console.log("[v0] CustomTooltip - label:", label, "group mode:", modeText)
-
     return (
       <div
         style={{
@@ -564,7 +584,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)" }}>Group: {groupText}</div>
       </div>
     )
-  }
+  }, [])
 
   const histogramData = useMemo(() => {
     if (!visibleRows || visibleRows.length === 0) return []
@@ -572,7 +592,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     const BIN_SIZE = 0.02 // 20 g chunks
     const HALF_BIN = BIN_SIZE / 2 // tolerance: +/- 0.010 kg around bin center
     const quantizeToBinCenter = (w: number) => {
-      // Snap to the nearest 0.020 kg center (tolerant grouping)
       return Math.round(w / BIN_SIZE) * BIN_SIZE
     }
 
@@ -586,7 +605,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     const histogramArray = Array.from(bins.entries())
       .map(([center, count]) => ({
         center,
-        // Range is center +/- HALF_BIN
         start: center - HALF_BIN,
         end: center + HALF_BIN,
         count,
@@ -603,7 +621,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
               <CardTitle className="font-sans text-lg font-semibold tracking-tight">{title}</CardTitle>
-              {/* Date and time of day */}
               <div className="flex items-center gap-2">
                 {timeOfDay === "Morning" ? (
                   <svg
