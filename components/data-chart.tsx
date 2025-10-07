@@ -610,7 +610,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
 
             {/* Stats grid */}
             {stats && (
-              <div className="flex items-center gap-3 text-sm flex-wrap">
+              <div className="flex items-center gap-3 text-sm overflow-x-auto">
                 <div className="flex items-center gap-1.5 whitespace-nowrap">
                   <span className="text-muted-foreground">Points:</span>
                   <span className="font-medium">{stats.points.toLocaleString()}</span>
