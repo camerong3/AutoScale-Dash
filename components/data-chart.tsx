@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import {
   Line,
   LineChart,
@@ -14,11 +14,15 @@ import {
   Tooltip,
   Bar,
   BarChart,
+  ReferenceLine,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer } from "@/components/ui/chart"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@supabase/supabase-js"
+import { useNotes } from "@/lib/use-notes"
+import { NotesDialog } from "@/components/notes-dialog"
+import { StickyNote } from "lucide-react"
 
 type DataPoint = {
   t: number
@@ -41,9 +45,10 @@ type DataChartProps = {
   data?: DataPoint[]
   createdAt?: string
   fetchOptions?: SupabaseFetchOptions
+  eventId?: string
 }
 
-export function DataChart({ title, data, createdAt, fetchOptions }: DataChartProps) {
+export function DataChart({ title, data, createdAt, fetchOptions, eventId }: DataChartProps) {
   const [rows, setRows] = useState<DataPoint[]>(data ?? [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -57,7 +62,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
   const [brushEndIndex, setBrushEndIndex] = useState<number>(0)
   const [copied, setCopied] = useState(false)
 
-  const WINDOW_HALF = 20000
+  const WINDOW_HALF = 2500
   const [hoverWindow, setHoverWindow] = useState<{
     left: number
     right: number
@@ -66,6 +71,19 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
   } | null>(null)
   const GROUP_COUNT = 10
   const [hoverT, setHoverT] = useState<number | null>(null)
+
+  const modeCache = useRef<Map<number, { left: number; right: number; modeKg: number | null; count: number }>>(
+    new Map(),
+  )
+
+  const chartEventId = eventId ?? title
+  const { notes, addNote, updateNote, deleteNote } = useNotes(chartEventId)
+  const [notesDialogOpen, setNotesDialogOpen] = useState(false)
+  const [selectedNoteTimeRange, setSelectedNoteTimeRange] = useState<{ start: number; end: number } | null>(null)
+
+  useEffect(() => {
+    modeCache.current.clear()
+  }, [rows])
 
   useEffect(() => {
     if (data && data.length > 0) {
@@ -282,7 +300,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     return estimatedWeightKg * 2.20462262185
   }, [estimatedWeightKg])
 
-  function groupForT(t: number) {
+  const groupForT = (t: number) => {
     if (!groupedRanges || groupedRanges.length === 0) return null
     for (const g of groupedRanges) {
       if (t >= g.startT && t <= g.endT) return g
@@ -337,35 +355,63 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     return hour < 15 ? "Morning" : "Night"
   }, [createdAt])
 
-  function computeModeKgInWindow(centerT: number): {
-    left: number
-    right: number
-    modeKg: number | null
-    count: number
-  } {
-    const left = centerT - WINDOW_HALF
-    const right = centerT + WINDOW_HALF
-    if (!rows || rows.length === 0) return { left, right, modeKg: null, count: 0 }
-    const inRange = rows.filter((r) => r.t >= left && r.t <= right)
-    if (inRange.length === 0) return { left, right, modeKg: null, count: 0 }
-    const bins = new Map<number, number>() // key: kg rounded to 0.1
-    for (const r of inRange) {
-      const key = Math.round((r.kg ?? 0) * 10) / 10
-      bins.set(key, (bins.get(key) ?? 0) + 1)
-    }
-    let best: number | null = null
-    let bestCount = 0
-    for (const [k, c] of bins.entries()) {
-      if (c > bestCount) {
-        bestCount = c
-        best = k
-      } else if (c === bestCount && best !== null && k > best) {
-        // tie-breaker: choose the higher weight
-        best = k
+  const computeModeKgInWindow = useCallback(
+    (
+      centerT: number,
+    ): {
+      left: number
+      right: number
+      modeKg: number | null
+      count: number
+    } => {
+      const roundedT = Math.round(centerT)
+
+      const cached = modeCache.current.get(roundedT)
+      if (cached) {
+        return cached
       }
-    }
-    return { left, right, modeKg: best, count: inRange.length }
-  }
+
+      const left = roundedT - WINDOW_HALF
+      const right = roundedT + WINDOW_HALF
+      if (!rows || rows.length === 0) {
+        const result = { left, right, modeKg: null, count: 0 }
+        modeCache.current.set(roundedT, result)
+        return result
+      }
+      const inRange = rows.filter((r) => r.t >= left && r.t <= right)
+      if (inRange.length === 0) {
+        const result = { left, right, modeKg: null, count: 0 }
+        modeCache.current.set(roundedT, result)
+        return result
+      }
+      const bins = new Map<number, number>() // key: kg rounded to 0.1
+      for (const r of inRange) {
+        const key = Math.round((r.kg ?? 0) * 10) / 10
+        bins.set(key, (bins.get(key) ?? 0) + 1)
+      }
+      let best: number | null = null
+      let bestCount = 0
+      for (const [k, c] of bins.entries()) {
+        if (c > bestCount) {
+          bestCount = c
+          best = k
+        } else if (c === bestCount && best !== null && k > best) {
+          best = k
+        }
+      }
+
+      const result = { left, right, modeKg: best, count: inRange.length }
+      modeCache.current.set(roundedT, result)
+
+      if (modeCache.current.size > 1000) {
+        const firstKey = modeCache.current.keys().next().value
+        modeCache.current.delete(firstKey)
+      }
+
+      return result
+    },
+    [rows, WINDOW_HALF],
+  )
 
   function indexForT(target: number): number {
     if (!rows || rows.length === 0) return 0
@@ -378,7 +424,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
       if (tm < target) lo = mid + 1
       else hi = mid - 1
     }
-    // lo is the first index greater than target; choose the closer of lo and lo-1
     const cand = Math.max(0, Math.min(rows.length - 1, lo))
     if (cand > 0) {
       const a = rows[cand - 1]
@@ -422,7 +467,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
       const left = Math.min(Number(refAreaLeft), Number(refAreaRight))
       const right = Math.max(Number(refAreaLeft), Number(refAreaRight))
       setZoomDomain({ left, right })
-      // Sync the Brush slider range to the new zoom window
       const startIdx = indexForT(left)
       const endIdx = indexForT(right)
       setBrushStartIndex(Math.min(startIdx, endIdx))
@@ -434,6 +478,17 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     setHoverT(null)
   }
 
+  const handleAddNoteForSelection = () => {
+    if (refAreaLeft !== "" && refAreaRight !== "" && refAreaLeft !== refAreaRight) {
+      const left = Math.min(Number(refAreaLeft), Number(refAreaRight))
+      const right = Math.max(Number(refAreaLeft), Number(refAreaRight))
+      setSelectedNoteTimeRange({ start: left, end: right })
+    } else {
+      setSelectedNoteTimeRange(null)
+    }
+    setNotesDialogOpen(true)
+  }
+
   const handleResetZoom = () => {
     console.log("[v0] Reset zoom - rows.length:", rows.length)
     console.log("[v0] Setting brush to 0 -", rows.length - 1)
@@ -443,7 +498,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     setRefAreaRight("")
     setYAuto(true)
 
-    // Reset brush indices
     const newEndIndex = rows.length - 1
     setBrushStartIndex(0)
     setBrushEndIndex(newEndIndex)
@@ -482,7 +536,6 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
       const left = rows[Math.min(clampedStart, clampedEnd)].t
       const right = rows[Math.max(clampedStart, clampedEnd)].t
       setZoomDomain({ left, right })
-      // Update hover window around the new center of the selection for immediate feedback
       const center = (left + right) / 2
       setHoverWindow(computeModeKgInWindow(center))
     }
@@ -509,7 +562,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     }
   }
 
-  const CustomTooltip = ({ active, label, payload }: any) => {
+  const CustomTooltip = useCallback(({ active, label, payload }: any) => {
     if (!active || !payload || payload.length === 0) return null
     const tNum = Number(label)
     const g = Number.isFinite(tNum) ? groupForT(tNum) : null
@@ -552,148 +605,173 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.8)" }}>Group: {groupText}</div>
       </div>
     )
-  }
+  }, [])
 
   const histogramData = useMemo(() => {
     if (!visibleRows || visibleRows.length === 0) return []
 
-    const BIN_SIZE = 0.020; // 20 g chunks
-    const HALF_BIN = BIN_SIZE / 2; // tolerance: +/- 0.010 kg around bin center
+    const BIN_SIZE = 0.02 // 20 g chunks
+    const HALF_BIN = BIN_SIZE / 2 // tolerance: +/- 0.010 kg around bin center
     const quantizeToBinCenter = (w: number) => {
-      // Snap to the nearest 0.020 kg center (tolerant grouping)
-      return Math.round(w / BIN_SIZE) * BIN_SIZE;
-    };
+      return Math.round(w / BIN_SIZE) * BIN_SIZE
+    }
 
-    const bins = new Map<number, number>();
+    const bins = new Map<number, number>()
 
     for (const row of visibleRows) {
-      const center = quantizeToBinCenter(row.kg);
-      bins.set(center, (bins.get(center) || 0) + 1);
+      const center = quantizeToBinCenter(row.kg)
+      bins.set(center, (bins.get(center) || 0) + 1)
     }
 
     const histogramArray = Array.from(bins.entries())
       .map(([center, count]) => ({
         center,
-        // Range is center +/- HALF_BIN
         start: center - HALF_BIN,
         end: center + HALF_BIN,
         count,
       }))
-      .sort((a, b) => a.center - b.center);
+      .sort((a, b) => a.center - b.center)
 
-    return histogramArray;
+    return histogramArray
   }, [visibleRows])
 
   return (
     <Card>
       <CardHeader className="pb-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 space-y-3">
-            {/* Title and estimate badge */}
-            <div className="flex items-center gap-3 flex-wrap">
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
               <CardTitle className="font-sans text-lg font-semibold tracking-tight">{title}</CardTitle>
-              {estimatedWeightKg != null && estimatedWeightLbs != null && (
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 border border-emerald-200">
-                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    <span className="text-sm font-semibold text-emerald-700">{estimatedWeightKg.toFixed(1)} kg</span>
-                    <span className="text-xs text-emerald-600">({estimatedWeightLbs.toFixed(1)} lbs)</span>
-                  </div>
-                  {estimatedModeCount > 1 && (
-                    <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
-                      {estimatedModeCount}× mode
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Stats grid */}
-            {stats && (
-              <div className="flex items-center gap-4 text-sm">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Points:</span>
-                  <span className="font-medium">{stats.points.toLocaleString()}</span>
-                </div>
-                <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Min:</span>
-                  <span className="font-medium">{stats.min} kg</span>
-                </div>
-                <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Max:</span>
-                  <span className="font-medium">{stats.max} kg</span>
-                </div>
-                <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">Avg:</span>
-                  <span className="font-medium">{stats.avg} kg</span>
-                </div>
-              </div>
-            )}
-
-            {/* Date */}
-            <div className="flex items-center gap-2">
-              {timeOfDay === "Morning" ? (
-                <svg
-                  className="h-3.5 w-3.5 text-amber-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <circle cx="12" cy="12" r="4" fill="currentColor" />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41"
-                  />
-                </svg>
-              ) : (
-                <svg className="h-3.5 w-3.5 text-indigo-400" fill="currentColor" viewBox="0 0 24 24" stroke="none">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-              )}
-              <span className="text-xs text-muted-foreground">{timeOfDay}</span>
-            </div>
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex flex-col items-stretch gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopyData}
-              className="bg-transparent"
-              disabled={!rows || rows.length === 0}
-            >
-              {copied ? (
-                <>
-                  <svg className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Copied!
-                </>
-              ) : (
-                <>
-                  <svg className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div className="flex items-center gap-2">
+                {timeOfDay === "Morning" ? (
+                  <svg
+                    className="h-3.5 w-3.5 text-amber-500"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <circle cx="12" cy="12" r="4" fill="currentColor" />
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41"
                     />
                   </svg>
-                  Copy JSON
-                </>
-              )}
-            </Button>
-            {zoomDomain && (
-              <Button variant="outline" size="sm" onClick={handleResetZoom} className="bg-transparent">
-                Reset Zoom
+                ) : (
+                  <svg className="h-3.5 w-3.5 text-indigo-400" fill="currentColor" viewBox="0 0 24 24" stroke="none">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                  </svg>
+                )}
+                <span className="text-xs text-muted-foreground">{timeOfDay}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectedNoteTimeRange(null)
+                  setNotesDialogOpen(true)
+                }}
+                className="bg-transparent whitespace-nowrap"
+              >
+                <StickyNote className="h-4 w-4 mr-1.5" />
+                Notes {notes.length > 0 && `(${notes.length})`}
               </Button>
-            )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyData}
+                className="bg-transparent whitespace-nowrap"
+                disabled={!rows || rows.length === 0}
+              >
+                {copied ? (
+                  <>
+                    <svg
+                      className="h-4 w-4 mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <svg
+                      className="h-4 w-4 mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      />
+                    </svg>
+                    Copy JSON
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
+
+          {estimatedWeightKg != null && estimatedWeightLbs != null && (
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 border border-emerald-200">
+                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  <span className="text-sm font-semibold text-emerald-700">{estimatedWeightKg.toFixed(1)} kg</span>
+                  <span className="text-xs text-emerald-600">({estimatedWeightLbs.toFixed(1)} lbs)</span>
+                </div>
+                {estimatedModeCount > 1 && (
+                  <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                    {estimatedModeCount}× mode
+                  </span>
+                )}
+              </div>
+              {zoomDomain && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetZoom}
+                  className="bg-transparent whitespace-nowrap"
+                >
+                  Reset Zoom
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Stats grid */}
+          {stats && (
+            <div className="flex items-center gap-3 text-sm flex-nowrap overflow-x-auto">
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-muted-foreground">Points:</span>
+                <span className="font-medium">{stats.points.toLocaleString()}</span>
+              </div>
+              <div className="h-4 w-px bg-border" />
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-muted-foreground">Min:</span>
+                <span className="font-medium">{stats.min} kg</span>
+              </div>
+              <div className="h-4 w-px bg-border" />
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-muted-foreground">Max:</span>
+                <span className="font-medium">{stats.max} kg</span>
+              </div>
+              <div className="h-4 w-px bg-border" />
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-muted-foreground">Avg:</span>
+                <span className="font-medium">{stats.avg} kg</span>
+              </div>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -797,6 +875,30 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
                       fillOpacity={0.08}
                     />
                   )}
+                  {notes.map((note) => {
+                    if (note.timeRange) {
+                      return (
+                        <ReferenceArea
+                          key={note.id}
+                          x1={note.timeRange.start}
+                          x2={note.timeRange.end}
+                          strokeOpacity={0}
+                          fill="#f59e0b"
+                          fillOpacity={0.1}
+                        />
+                      )
+                    } else {
+                      return (
+                        <ReferenceLine
+                          key={note.id}
+                          x={note.timestamp}
+                          stroke="#f59e0b"
+                          strokeWidth={2}
+                          strokeDasharray="3 3"
+                        />
+                      )
+                    }
+                  })}
                 </LineChart>
               </ResponsiveContainer>
               <div className="mt-1 text-center">
@@ -867,6 +969,17 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
           </div>
         )}
       </CardContent>
+
+      <NotesDialog
+        open={notesDialogOpen}
+        onOpenChange={setNotesDialogOpen}
+        notes={notes}
+        onAddNote={addNote}
+        onUpdateNote={updateNote}
+        onDeleteNote={deleteNote}
+        selectedTimeRange={selectedNoteTimeRange}
+        currentTimestamp={hoverT ?? undefined}
+      />
     </Card>
   )
 }
