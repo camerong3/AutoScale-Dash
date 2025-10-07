@@ -57,7 +57,7 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
   const [brushEndIndex, setBrushEndIndex] = useState<number>(0)
   const [copied, setCopied] = useState(false)
 
-  const WINDOW_HALF = 20000
+  const WINDOW_HALF = 5000
   const [hoverWindow, setHoverWindow] = useState<{
     left: number
     right: number
@@ -347,6 +347,11 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     const right = centerT + WINDOW_HALF
     if (!rows || rows.length === 0) return { left, right, modeKg: null, count: 0 }
     const inRange = rows.filter((r) => r.t >= left && r.t <= right)
+
+    console.log("[v0] computeModeKgInWindow - centerT:", centerT)
+    console.log("[v0] Window range:", left, "to", right)
+    console.log("[v0] Points in range:", inRange.length)
+
     if (inRange.length === 0) return { left, right, modeKg: null, count: 0 }
     const bins = new Map<number, number>() // key: kg rounded to 0.1
     for (const r of inRange) {
@@ -364,6 +369,10 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
         best = k
       }
     }
+
+    console.log("[v0] Mode weight found:", best, "kg with count:", bestCount)
+    console.log("[v0] Total unique bins:", bins.size)
+
     return { left, right, modeKg: best, count: inRange.length }
   }
 
@@ -515,6 +524,9 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     const g = Number.isFinite(tNum) ? groupForT(tNum) : null
     const modeText = g && g.modeKg !== null ? `${g.modeKg.toFixed(1)} kg` : "—"
     const groupText = g ? `[${g.startT} → ${g.endT}] (N=${g.count})` : "—"
+
+    console.log("[v0] CustomTooltip - label:", label, "group mode:", modeText)
+
     return (
       <div
         style={{
