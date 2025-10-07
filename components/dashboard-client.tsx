@@ -13,10 +13,37 @@ type DataPoint = {
   kg: number
 }
 
+type WeightEventResult = {
+  id: string
+  event_id: string
+  scale_id: string
+  computed_at: string
+  algorithm_version: string
+  mode: string
+  raw_stable_weight_kg: number
+  raw_uncertainty_kg: number
+  raw_quality: number
+  window_start_s: number
+  window_end_s: number
+  duration_s: number
+  mean_slope_kg_per_s: number
+  mean_std_kg: number
+  n_points: number
+  consensus_weight_kg: number | null
+  consensus_uncertainty_kg: number | null
+  consensus_band_kg: number | null
+  consensus_mode: string | null
+  consensus_window_start_s: number | null
+  consensus_window_end_s: number | null
+  consensus_duration_s: number | null
+  metadata: any | null
+}
+
 type GraphData = {
   id: string
   started_at: string
   samples: DataPoint[]
+  results?: WeightEventResult
 }
 
 export function DashboardClient() {
@@ -38,16 +65,43 @@ export function DashboardClient() {
 
     async function fetchData() {
       try {
-        const { data, error } = await supabase
+        const { data: eventsData, error: eventsError } = await supabase
           .from("weight_events")
           .select("*")
           .order("started_at", { ascending: false })
 
-        console.log("[v0] Fetched data:", data)
+        if (eventsError) throw eventsError
 
-        if (error) throw error
+        console.log("[v0] Fetched weight events:", eventsData)
 
-        setGraphs(data || [])
+        const { data: resultsData, error: resultsError } = await supabase
+          .from("weight_event_results")
+          .select("*")
+          .order("computed_at", { ascending: false })
+
+        if (resultsError) {
+          console.warn("[v0] Error fetching weight_event_results:", resultsError)
+          // Don't throw - results are optional
+        }
+
+        console.log("[v0] Fetched weight event results:", resultsData)
+
+        const resultsMap = new Map<string, WeightEventResult>()
+        if (resultsData) {
+          for (const result of resultsData) {
+            // Keep only the most recent result per event
+            if (!resultsMap.has(result.event_id)) {
+              resultsMap.set(result.event_id, result)
+            }
+          }
+        }
+
+        const combinedData: GraphData[] = (eventsData || []).map((event) => ({
+          ...event,
+          results: resultsMap.get(event.id),
+        }))
+
+        setGraphs(combinedData)
       } catch (err) {
         console.error("[v0] Error fetching data:", err)
         setError(err instanceof Error ? err.message : "Failed to fetch data")
@@ -150,6 +204,7 @@ export function DashboardClient() {
                 title={new Date(graph.started_at).toLocaleString()}
                 data={graph.samples}
                 createdAt={graph.started_at}
+                results={graph.results}
               />
             ))}
           </div>

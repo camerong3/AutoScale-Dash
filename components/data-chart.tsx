@@ -36,14 +36,41 @@ type SupabaseFetchOptions = {
   limit?: number
 }
 
+type WeightEventResult = {
+  id: string
+  event_id: string
+  scale_id: string
+  computed_at: string
+  algorithm_version: string
+  mode: string
+  raw_stable_weight_kg: number
+  raw_uncertainty_kg: number
+  raw_quality: number
+  window_start_s: number
+  window_end_s: number
+  duration_s: number
+  mean_slope_kg_per_s: number
+  mean_std_kg: number
+  n_points: number
+  consensus_weight_kg: number | null
+  consensus_uncertainty_kg: number | null
+  consensus_band_kg: number | null
+  consensus_mode: string | null
+  consensus_window_start_s: number | null
+  consensus_window_end_s: number | null
+  consensus_duration_s: number | null
+  metadata: any | null
+}
+
 type DataChartProps = {
   title: string
   data?: DataPoint[]
   createdAt?: string
   fetchOptions?: SupabaseFetchOptions
+  results?: WeightEventResult
 }
 
-export function DataChart({ title, data, createdAt, fetchOptions }: DataChartProps) {
+export function DataChart({ title, data, createdAt, fetchOptions, results }: DataChartProps) {
   const [rows, setRows] = useState<DataPoint[]>(data ?? [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -288,6 +315,41 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
   const modePointsSet = useMemo(() => {
     return new Set(estimatePoints.map((p) => p.t))
   }, [estimatePoints])
+
+  const algorithmWindowPointsSet = useMemo(() => {
+    if (!results) return new Set<number>()
+
+    // Convert seconds to milliseconds
+    const windowStartMs = results.window_start_s * 1000
+    const windowEndMs = results.window_end_s * 1000
+
+    // Determine current visible X range
+    let left = rows.length ? rows[0].t : Number.NEGATIVE_INFINITY
+    let right = rows.length ? rows[rows.length - 1].t : Number.POSITIVE_INFINITY
+    if (zoomDomain) {
+      left = zoomDomain.left
+      right = zoomDomain.right
+    }
+
+    // Find all points within the algorithm window that are also visible
+    const windowPoints = rows.filter((r) => {
+      if (r.t < left || r.t > right) return false
+      return r.t >= windowStartMs && r.t <= windowEndMs
+    })
+
+    // Down-sample if there are too many markers
+    const MAX_MARKERS = 250
+    if (windowPoints.length <= MAX_MARKERS) {
+      return new Set(windowPoints.map((p) => p.t))
+    }
+
+    const step = Math.ceil(windowPoints.length / MAX_MARKERS)
+    const sampled: number[] = []
+    for (let i = 0; i < windowPoints.length; i += step) {
+      sampled.push(windowPoints[i].t)
+    }
+    return new Set(sampled)
+  }, [rows, zoomDomain, results])
 
   const estimatedWeightLbs = useMemo(() => {
     if (estimatedWeightKg == null) return null
@@ -622,8 +684,20 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
     (props: any) => {
       const { cx, cy, payload } = props
       const isMode = modePointsSet.has(payload.t)
+      const isAlgorithmWindow = algorithmWindowPointsSet.has(payload.t)
+
+      if (isMode && isAlgorithmWindow) {
+        // Point is in both mode and algorithm window - show combined indicator
+        return (
+          <g>
+            <circle cx={cx} cy={cy} r={5} fill="#3b82f6" fillOpacity={0.4} />
+            <circle cx={cx} cy={cy} r={3} fill="#10b981" fillOpacity={0.8} />
+          </g>
+        )
+      }
 
       if (isMode) {
+        // Mode point only - green
         return (
           <g>
             <circle cx={cx} cy={cy} r={4} fill="#10b981" fillOpacity={0.6} />
@@ -632,9 +706,20 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
         )
       }
 
+      if (isAlgorithmWindow) {
+        // Algorithm window point only - blue
+        return (
+          <g>
+            <circle cx={cx} cy={cy} r={4} fill="#3b82f6" fillOpacity={0.6} />
+            <circle cx={cx} cy={cy} r={2} fill="#3b82f6" />
+          </g>
+        )
+      }
+
+      // Regular point - transparent
       return <circle cx={cx} cy={cy} r={4} fill="transparent" stroke="transparent" />
     },
-    [modePointsSet],
+    [modePointsSet, algorithmWindowPointsSet],
   )
 
   return (
@@ -713,16 +798,34 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
 
           {estimatedWeightKg != null && estimatedWeightLbs != null && (
             <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 border border-emerald-200">
-                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  <span className="text-sm font-semibold text-emerald-700">{estimatedWeightKg.toFixed(1)} kg</span>
-                  <span className="text-xs text-emerald-600">({estimatedWeightLbs.toFixed(1)} lbs)</span>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 border border-emerald-200">
+                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span className="text-sm font-semibold text-emerald-700">{estimatedWeightKg.toFixed(1)} kg</span>
+                    <span className="text-xs text-emerald-600">({estimatedWeightLbs.toFixed(1)} lbs)</span>
+                  </div>
+                  {estimatedModeCount > 1 && (
+                    <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                      {estimatedModeCount}× mode
+                    </span>
+                  )}
                 </div>
-                {estimatedModeCount > 1 && (
-                  <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
-                    {estimatedModeCount}× mode
-                  </span>
+
+                {results && (
+                  <div className="flex items-center gap-2">
+                    <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 border border-blue-200">
+                      <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                      <span className="text-sm font-semibold text-blue-700">
+                        {results.raw_stable_weight_kg.toFixed(3)} kg
+                      </span>
+                      <span className="text-xs text-blue-600">±{results.raw_uncertainty_kg.toFixed(3)} kg</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                      Q: {(results.raw_quality * 100).toFixed(0)}%
+                    </span>
+                    <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-md">{results.mode}</span>
+                  </div>
                 )}
               </div>
               {zoomDomain && (
