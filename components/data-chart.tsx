@@ -557,18 +557,18 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
   const histogramData = useMemo(() => {
     if (!visibleRows || visibleRows.length === 0) return []
 
-    const BIN_SIZE = 0.020; // 20 g chunks
-    const HALF_BIN = BIN_SIZE / 2; // tolerance: +/- 0.010 kg around bin center
+    const BIN_SIZE = 0.02 // 20 g chunks
+    const HALF_BIN = BIN_SIZE / 2 // tolerance: +/- 0.010 kg around bin center
     const quantizeToBinCenter = (w: number) => {
       // Snap to the nearest 0.020 kg center (tolerant grouping)
-      return Math.round(w / BIN_SIZE) * BIN_SIZE;
-    };
+      return Math.round(w / BIN_SIZE) * BIN_SIZE
+    }
 
-    const bins = new Map<number, number>();
+    const bins = new Map<number, number>()
 
     for (const row of visibleRows) {
-      const center = quantizeToBinCenter(row.kg);
-      bins.set(center, (bins.get(center) || 0) + 1);
+      const center = quantizeToBinCenter(row.kg)
+      bins.set(center, (bins.get(center) || 0) + 1)
     }
 
     const histogramArray = Array.from(bins.entries())
@@ -579,16 +579,16 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
         end: center + HALF_BIN,
         count,
       }))
-      .sort((a, b) => a.center - b.center);
+      .sort((a, b) => a.center - b.center)
 
-    return histogramArray;
+    return histogramArray
   }, [visibleRows])
 
   return (
     <Card>
       <CardHeader className="pb-4">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 space-y-3">
+          <div className="flex-1 space-y-3 min-w-0">
             {/* Title and estimate badge */}
             <div className="flex items-center gap-3 flex-wrap">
               <CardTitle className="font-sans text-lg font-semibold tracking-tight">{title}</CardTitle>
@@ -610,23 +610,23 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
 
             {/* Stats grid */}
             {stats && (
-              <div className="flex items-center gap-4 text-sm">
-                <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-3 text-sm flex-wrap">
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
                   <span className="text-muted-foreground">Points:</span>
                   <span className="font-medium">{stats.points.toLocaleString()}</span>
                 </div>
                 <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
                   <span className="text-muted-foreground">Min:</span>
                   <span className="font-medium">{stats.min} kg</span>
                 </div>
                 <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
                   <span className="text-muted-foreground">Max:</span>
                   <span className="font-medium">{stats.max} kg</span>
                 </div>
                 <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
                   <span className="text-muted-foreground">Avg:</span>
                   <span className="font-medium">{stats.avg} kg</span>
                 </div>
@@ -660,12 +660,12 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
           </div>
 
           {/* Action buttons */}
-          <div className="flex flex-col items-stretch gap-2 shrink-0">
+          <div className="flex flex-col items-end gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
               onClick={handleCopyData}
-              className="bg-transparent"
+              className="bg-transparent whitespace-nowrap"
               disabled={!rows || rows.length === 0}
             >
               {copied ? (
@@ -689,7 +689,12 @@ export function DataChart({ title, data, createdAt, fetchOptions }: DataChartPro
               )}
             </Button>
             {zoomDomain && (
-              <Button variant="outline" size="sm" onClick={handleResetZoom} className="bg-transparent">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetZoom}
+                className="bg-transparent whitespace-nowrap"
+              >
                 Reset Zoom
               </Button>
             )}
