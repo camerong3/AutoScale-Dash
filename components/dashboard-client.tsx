@@ -6,8 +6,9 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { DataChart } from "@/components/data-chart"
 import { Spinner } from "@/components/ui/spinner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, RefreshCw } from "lucide-react"
 import { WeightTrendChart } from "@/components/weight-trend-chart"
+import { Button } from "@/components/ui/button"
 
 type DataPoint = {
   t: number
@@ -51,6 +52,8 @@ export function DashboardClient() {
   const [graphs, setGraphs] = useState<GraphData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [recalculating, setRecalculating] = useState(false)
+  const [recalcMessage, setRecalcMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
   useEffect(() => {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -113,6 +116,38 @@ export function DashboardClient() {
 
     fetchData()
   }, [])
+
+  const handleRecalculate = async () => {
+    setRecalculating(true)
+    setRecalcMessage(null)
+
+    try {
+      const response = await fetch("/api/recalculate", {
+        method: "POST",
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "Recalculation failed")
+      }
+
+      setRecalcMessage({ type: "success", text: "Weight recalculation started successfully" })
+
+      // Refresh data after a short delay to allow processing
+      setTimeout(() => {
+        window.location.reload()
+      }, 2000)
+    } catch (err) {
+      console.error("[v0] Error recalculating weights:", err)
+      setRecalcMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to recalculate weights",
+      })
+    } finally {
+      setRecalculating(false)
+    }
+  }
 
   const trendData = useMemo(() => {
     return graphs
@@ -193,10 +228,31 @@ export function DashboardClient() {
     <div className="min-h-screen bg-background">
       <header className="border-b">
         <div className="container mx-auto px-4 py-6">
-          <h1 className="font-sans text-3xl font-bold tracking-tight">AutoScale Dashboard</h1>
-          <p className="mt-2 text-muted-foreground">
-            Visualizing time-series weight data with {graphs.length} dataset{graphs.length !== 1 ? "s" : ""}
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <h1 className="font-sans text-3xl font-bold tracking-tight">AutoScale Dashboard</h1>
+              <p className="mt-2 text-muted-foreground">
+                Visualizing time-series weight data with {graphs.length} dataset{graphs.length !== 1 ? "s" : ""}
+              </p>
+            </div>
+            <Button
+              onClick={handleRecalculate}
+              disabled={recalculating}
+              variant="outline"
+              className="shrink-0 bg-transparent"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${recalculating ? "animate-spin" : ""}`} />
+              {recalculating ? "Recalculating..." : "Recalculate Weights"}
+            </Button>
+          </div>
+
+          {recalcMessage && (
+            <Alert className={`mt-4 ${recalcMessage.type === "error" ? "border-destructive" : "border-green-500"}`}>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>{recalcMessage.type === "success" ? "Success" : "Error"}</AlertTitle>
+              <AlertDescription>{recalcMessage.text}</AlertDescription>
+            </Alert>
+          )}
         </div>
       </header>
 
