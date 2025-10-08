@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DataChart } from "@/components/data-chart"
 import { Spinner } from "@/components/ui/spinner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
+import { WeightTrendChart } from "@/components/weight-trend-chart"
 
 type DataPoint = {
   t: number
@@ -113,6 +114,19 @@ export function DashboardClient() {
     fetchData()
   }, [])
 
+  const trendData = useMemo(() => {
+    return graphs
+      .filter((graph) => graph.results && graph.results.raw_stable_weight_kg > 50)
+      .map((graph) => ({
+        timestamp: new Date(graph.started_at).getTime(),
+        date: graph.started_at,
+        weight: graph.results!.raw_stable_weight_kg,
+        uncertainty: graph.results!.raw_uncertainty_kg,
+        quality: graph.results!.raw_quality,
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp)
+  }, [graphs])
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -187,6 +201,12 @@ export function DashboardClient() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
+        {trendData.length > 0 && (
+          <div className="mb-6">
+            <WeightTrendChart data={trendData} />
+          </div>
+        )}
+
         {graphs.length === 0 ? (
           <Card>
             <CardHeader>
