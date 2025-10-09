@@ -55,7 +55,7 @@ export function DashboardClient() {
   const [recalculating, setRecalculating] = useState(false)
   const [recalcMessage, setRecalcMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
-  useEffect(() => {
+  const fetchData = async () => {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -67,55 +67,58 @@ export function DashboardClient() {
 
     const supabase = createBrowserClient(supabaseUrl, supabaseKey)
 
-    async function fetchData() {
-      try {
-        const { data: eventsData, error: eventsError } = await supabase
-          .from("weight_events")
-          .select("*")
-          .order("started_at", { ascending: false })
+    try {
+      const { data: eventsData, error: eventsError } = await supabase
+        .from("weight_events")
+        .select("*")
+        .order("started_at", { ascending: false })
 
-        if (eventsError) throw eventsError
+      if (eventsError) throw eventsError
 
-        console.log("[v0] Fetched weight events:", eventsData)
+      console.log("[v0] Fetched weight events:", eventsData)
 
-        const { data: resultsData, error: resultsError } = await supabase
-          .from("weight_event_results")
-          .select("*")
-          .order("computed_at", { ascending: false })
+      const { data: resultsData, error: resultsError } = await supabase
+        .from("weight_event_results")
+        .select("*")
+        .order("computed_at", { ascending: false })
 
-        if (resultsError) {
-          console.warn("[v0] Error fetching weight_event_results:", resultsError)
-          // Don't throw - results are optional
-        }
+      if (resultsError) {
+        console.warn("[v0] Error fetching weight_event_results:", resultsError)
+      }
 
-        console.log("[v0] Fetched weight event results:", resultsData)
+      console.log("[v0] Fetched weight event results:", resultsData)
 
-        const resultsMap = new Map<string, WeightEventResult>()
-        if (resultsData) {
-          for (const result of resultsData) {
-            // Keep only the most recent result per event
-            if (!resultsMap.has(result.event_id)) {
-              resultsMap.set(result.event_id, result)
-            }
+      const resultsMap = new Map<string, WeightEventResult>()
+      if (resultsData) {
+        for (const result of resultsData) {
+          if (!resultsMap.has(result.event_id)) {
+            resultsMap.set(result.event_id, result)
           }
         }
-
-        const combinedData: GraphData[] = (eventsData || []).map((event) => ({
-          ...event,
-          results: resultsMap.get(event.id),
-        }))
-
-        setGraphs(combinedData)
-      } catch (err) {
-        console.error("[v0] Error fetching data:", err)
-        setError(err instanceof Error ? err.message : "Failed to fetch data")
-      } finally {
-        setLoading(false)
       }
-    }
 
+      const combinedData: GraphData[] = (eventsData || []).map((event) => ({
+        ...event,
+        results: resultsMap.get(event.id),
+      }))
+
+      setGraphs(combinedData)
+    } catch (err) {
+      console.error("[v0] Error fetching data:", err)
+      setError(err instanceof Error ? err.message : "Failed to fetch data")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
     fetchData()
   }, [])
+
+  const handleDelete = () => {
+    setLoading(true)
+    fetchData()
+  }
 
   const handleRecalculate = async () => {
     setRecalculating(true)
@@ -281,6 +284,8 @@ export function DashboardClient() {
                 data={graph.samples}
                 createdAt={graph.started_at}
                 results={graph.results}
+                eventId={graph.id}
+                onDelete={handleDelete}
               />
             ))}
           </div>

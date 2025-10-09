@@ -18,6 +18,13 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer } from "@/components/ui/chart"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { createClient } from "@supabase/supabase-js"
 
 type DataPoint = {
@@ -68,9 +75,11 @@ type DataChartProps = {
   createdAt?: string
   fetchOptions?: SupabaseFetchOptions
   results?: WeightEventResult
+  eventId?: string
+  onDelete?: () => void
 }
 
-export function DataChart({ title, data, createdAt, fetchOptions, results }: DataChartProps) {
+export function DataChart({ title, data, createdAt, fetchOptions, results, eventId, onDelete }: DataChartProps) {
   const [rows, setRows] = useState<DataPoint[]>(data ?? [])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -83,6 +92,8 @@ export function DataChart({ title, data, createdAt, fetchOptions, results }: Dat
   const [brushStartIndex, setBrushStartIndex] = useState<number>(0)
   const [brushEndIndex, setBrushEndIndex] = useState<number>(0)
   const [copied, setCopied] = useState(false)
+  const [resultsCopied, setResultsCopied] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const WINDOW_HALF = 2500
   const [hoverWindow, setHoverWindow] = useState<{
@@ -607,6 +618,58 @@ export function DataChart({ title, data, createdAt, fetchOptions, results }: Dat
     }
   }
 
+  const handleCopyResults = async () => {
+    if (!results) return
+    try {
+      const jsonData = JSON.stringify(results, null, 2)
+      await navigator.clipboard.writeText(jsonData)
+      setResultsCopied(true)
+      setTimeout(() => setResultsCopied(false), 2000)
+    } catch (err) {
+      console.error("[v0] Failed to copy results:", err)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!eventId) {
+      console.error("[v0] No event ID provided for deletion")
+      return
+    }
+
+    const confirmed = window.confirm("Are you sure you want to delete this weight event? This action cannot be undone.")
+
+    if (!confirmed) return
+
+    setDeleting(true)
+
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Supabase credentials not configured")
+      }
+
+      const supabase = createClient(supabaseUrl, supabaseKey)
+
+      const { error: deleteError } = await supabase.from("weight_events").delete().eq("id", eventId)
+
+      if (deleteError) throw deleteError
+
+      console.log("[v0] Successfully deleted weight event:", eventId)
+
+      // Call the onDelete callback to refresh the dashboard
+      if (onDelete) {
+        onDelete()
+      }
+    } catch (err) {
+      console.error("[v0] Error deleting weight event:", err)
+      alert(`Failed to delete weight event: ${err instanceof Error ? err.message : "Unknown error"}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const CustomTooltip = useCallback(({ active, label, payload }: any) => {
     if (!active || !payload || payload.length === 0) return null
     const tNum = Number(label)
@@ -753,47 +816,80 @@ export function DataChart({ title, data, createdAt, fetchOptions, results }: Dat
                 <span className="text-xs text-muted-foreground">{timeOfDay}</span>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCopyData}
-                className="bg-transparent whitespace-nowrap"
-                disabled={!rows || rows.length === 0}
-              >
-                {copied ? (
-                  <>
-                    <svg
-                      className="h-4 w-4 mr-1.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      className="h-4 w-4 mr-1.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="bg-transparent">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                    />
+                  </svg>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={handleCopyData} disabled={!rows || rows.length === 0}>
+                  <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                  {copied ? "Copied!" : "Copy JSON"}
+                </DropdownMenuItem>
+                {results && (
+                  <DropdownMenuItem onClick={handleCopyResults}>
+                    <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                       />
                     </svg>
-                    Copy JSON
+                    {resultsCopied ? "Copied!" : "Copy Results JSON"}
+                  </DropdownMenuItem>
+                )}
+                {zoomDomain && (
+                  <DropdownMenuItem onClick={handleResetZoom}>
+                    <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"
+                      />
+                    </svg>
+                    Reset Zoom
+                  </DropdownMenuItem>
+                )}
+                {eventId && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={handleDelete}
+                      disabled={deleting}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <svg
+                        className="h-4 w-4 mr-2"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                      {deleting ? "Deleting..." : "Delete Event"}
+                    </DropdownMenuItem>
                   </>
                 )}
-              </Button>
-            </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {estimatedWeightKg != null && estimatedWeightLbs != null && (
@@ -828,16 +924,6 @@ export function DataChart({ title, data, createdAt, fetchOptions, results }: Dat
                   </div>
                 )}
               </div>
-              {zoomDomain && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleResetZoom}
-                  className="bg-transparent whitespace-nowrap"
-                >
-                  Reset Zoom
-                </Button>
-              )}
             </div>
           )}
 
