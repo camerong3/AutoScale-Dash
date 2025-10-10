@@ -158,6 +158,7 @@ export function WeightTrendChart({ data }: WeightTrendChartProps) {
               tick={{ fill: "hsl(var(--muted-foreground))" }}
               domain={["dataMin - 1", "dataMax + 1"]}
               label={{ value: "Weight (kg)", angle: -90, position: "insideLeft", style: { textAnchor: "middle" } }}
+              tickFormatter={(value) => value.toFixed(3)}
             />
             <Tooltip
               content={({ active, payload }) => {
